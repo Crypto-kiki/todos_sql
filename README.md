@@ -59,7 +59,13 @@ model Todo {
 
 > brew install db-browser-for-sqlite
 
-# User등록
+또는
+
+> https://sqlitebrowser.org/dl/
+
+# API
+
+## Users
 
 ```typescript
 // src/app/api/users.route.ts
@@ -93,9 +99,7 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-## 테스트하기
-
-### users
+#### 테스트
 
 > npx prisma migrate dev --name init
 
@@ -127,7 +131,9 @@ export async function POST(request: NextRequest) {
    - DB SQLite실행 후, dev.db파일 열기
    - 정상요청 후 Browse Data에서 저장된 데이터들 확인해보기
 
-### todos
+## todos
+
+### POST
 
 ```typescript
 // src/app/api/todos.route.ts
@@ -158,6 +164,8 @@ export async function POST(request: NextRequest) {
 }
 ```
 
+#### 테스트(POST)
+
 > http://localhost:3000/api/todos
 
 ```json
@@ -168,3 +176,117 @@ export async function POST(request: NextRequest) {
 ```
 
 > sqlite에서 todo db확인
+
+### GET
+
+```typescript
+// src/app/api/todos.route.ts
+import { PrismaClient } from "@prisma/client";
+import { NextRequest, NextResponse } from "next/server";
+
+const prisma = new PrismaClient();
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = request.nextUrl;
+
+  try {
+    const userId = Number(searchParams.get("user-id"));
+
+    if (isNaN(userId) || userId === 0) {
+      throw new Error("유저 ID가 잘못되었습니다.");
+    }
+
+    const existUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existUser) {
+      throw new Error("존재하지 않는 유저입니다.");
+    }
+
+    const todos = await prisma.todo.findMany({
+      where: {
+        userId,
+      },
+    });
+
+    return NextResponse.json({ success: true, data: todos });
+  } catch (error: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || "할 일 조회에 실패했습니다.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const { content, userId } = await request.json();
+
+  try {
+    const todo = await prisma.todo.create({
+      data: {
+        content,
+        userId,
+      },
+    });
+
+    return NextResponse.json({ success: true, data: todo });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "할 일 추가에 실패했습니다.",
+      },
+      { status: 500 }
+    );
+  }
+}
+```
+
+#### 테스트
+
+- 존재하는 userId와 없는 userId를 조회해보기
+  > http://localhost:3000/api/todos?user-id=1
+
+### DELETE
+
+```typescript
+// src/app/api/todos/[id]/route.ts
+import { PrismaClient } from "@prisma/client";
+import { NextRequest, NextResponse } from "next/server";
+
+const prisma = new PrismaClient();
+
+export async function DELETE(
+  _request: NextRequest, // _ 사용하지 않는다는 의미로 체크
+  { params }: { params: { id: string } }
+) {
+  const { id } = await params;
+
+  try {
+    // 권한 체크 : 해당 유저가 삭제를 시도하는지
+    const todo = await prisma.todo.delete({
+      where: { id: Number(id) },
+    });
+
+    return NextResponse.json({ success: true, todoId: todo.id });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "할 일 삭제에 실패했습니다.",
+      },
+      { status: 500 }
+    );
+  }
+}
+```
+
+#### 테스트
+
+> http://localhost:3000/api/todos/5
+
+### 암호화(bcrypt)
+
+> npm install bcrypt
+> npm install --save-dev @types/bcrypt
